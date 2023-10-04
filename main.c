@@ -1,6 +1,13 @@
 #include "chip8.h"
 
+#include <time.h>
+#include <math.h>
+
 #include <SDL3/SDL.h>
+
+/* ---- Defines ----*/
+
+#define SECOND_TO_US    1000000
 
 /* ---- Functions to handle Main Window ---- */
 
@@ -37,19 +44,63 @@ int main_loop(Chip8* chip8)
     STD_BOOL quit = STD_FALSE;
     SDL_Event e;
 
-    while( quit == STD_FALSE )
+    struct timespec last_time;
+    struct timespec curr_time;
+    uint64_t timedelta_us = 0;
+    int intructions_per_60_hz = 0;
+
+    if(clock_gettime(CLOCK_MONOTONIC_RAW, &last_time))
+    {
+        // TODO Log
+        return 1;
+    }
+
+    while(quit == STD_FALSE)
     { 
+        /* Calculate timedelta */
+        if(clock_gettime(CLOCK_MONOTONIC_RAW, &curr_time))
+        {
+            // TODO Log
+            return 1;
+        }
+
+        timedelta_us += (curr_time.tv_sec - last_time.tv_sec) * 1000000 +
+                        (curr_time.tv_nsec - last_time.tv_nsec) / 1000;
+
+        /* Update timers with a 60Hz frequency */
+        if(timedelta_us > (1.0 / 60.0) * SECOND_TO_US)
+        {
+            /* Update the timers */
+            if(chip8->delay_timer > 0)
+            {
+                chip8->delay_timer--;
+            }
+
+            if(chip8->sound_timer > 0)
+            {
+                chip8->sound_timer--;
+                // TODO play sound
+            }
+
+            timedelta_us -= (1.0 / 60.0) * SECOND_TO_US;
+            intructions_per_60_hz = 0;
+        }
+
+        /* Run CPU Cycle */
+        chip8->loop();
+
         while(SDL_PollEvent(&e))
         {
-            /* Run CPU Cycle */
-            chip8->loop();
-
             /* Handle window events */
             if(e.type == SDL_EVENT_QUIT)
             {
                 quit = STD_TRUE; 
             }
         } 
+
+        intructions_per_60_hz++;
+
+        last_time = curr_time;
     }
 
     return 0;
