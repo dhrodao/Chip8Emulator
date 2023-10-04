@@ -79,7 +79,11 @@ int main_loop(Chip8* chip8)
             if(chip8->sound_timer > 0)
             {
                 chip8->sound_timer--;
-                // TODO play sound
+                if(chip8->sound_timer == 0)
+                {
+                    // TODO play sound
+                    printf("Beeep\n");
+                }
             }
 
             timedelta_us -= (1.0 / 60.0) * SECOND_TO_US;
@@ -115,6 +119,16 @@ void window_deinit(SDL_Window* w)
     SDL_Quit(); 
 }
 
+void debug_display(Chip8* chip8)
+{
+    for(int i = 0; i < DISP_H; i++)
+    {
+        for(int j = 0; j < DISP_W; j++)
+            (chip8->display[i][j] == 1)? printf("X"): printf(" ");
+        printf("\n");
+    }
+}
+
 /* ---- Main Function ---- */
 
 int main()
@@ -124,6 +138,13 @@ int main()
 
     Chip8* chip8 = c8_init();
 
+    /* Load Chip8 ROM */
+    if(chip8->load_rom("test_opcode.ch8") != 0)
+    {
+        return 1;
+    }
+
+    /* Init SDL Window */
     if(window_init(w, screenSurface) != 0)
     {
         return 1;
@@ -132,6 +153,8 @@ int main()
     main_loop(chip8);
 
     window_deinit(w);
+
+    debug_display(chip8);
 
     return 0;
 }

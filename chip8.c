@@ -11,7 +11,7 @@ enum {
     FONTSET_SPRITE = 5
 };
 
-const UBIT16 c8_fontset[FONTSET_LEN * FONTSET_SPRITE] = {
+const UBIT8 c8_fontset[FONTSET_LEN * FONTSET_SPRITE] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -64,8 +64,7 @@ void c8_process_instruction_cls()
 /* This function process the _ret_ instruction */
 void c8_process_instruction_ret()
 {
-    chip8.pc = chip8.sp;
-    c8_decrement_sp();
+    chip8.pc = chip8.stack[--chip8.sp];
 }
 
 /* This function process the instruction set 0 */
@@ -87,15 +86,15 @@ void c8_process_instruction_0()
 /* This function process the instruction jump to location */
 void c8_process_instruction_1()
 {
-    chip8.pc = (chip8.opcode & 0xFFF);
+    chip8.pc = (chip8.opcode & 0x0FFF);
 }
 
 /* This function process the instruction call subroutine */
 void c8_process_instruction_2()
 {
-    c8_increment_sp(); // TODO: Ojo, mirar si incrementar antes o despues de meter el PC en el stack
     chip8.stack[chip8.sp] = chip8.pc;
-    chip8.pc = (chip8.opcode & 0xFFF);
+    c8_increment_sp();
+    chip8.pc = (chip8.opcode & 0x0FFF);
 }
 
 /* This function process the instruction skip next instruction if Vx == kk */
@@ -157,7 +156,7 @@ void c8_process_instruction_7()
     UBIT8 vx = (chip8.opcode & 0x0F00) >> 8;
     UBIT16 kk = (chip8.opcode & 0x00FF);
 
-    chip8.registers[vx] = chip8.registers[vx] + kk;
+    chip8.registers[vx] += kk;
 
     c8_increment_pc();
 }
@@ -207,7 +206,7 @@ void c8_process_add_regs()
     UBIT16 sum = 0x00;
     
     sum = chip8.registers[vx] + chip8.registers[vy];
-    if(sum > 0xFF)
+    if(sum > 255)
     {
         chip8.registers[vf] = 1;
     }
@@ -216,7 +215,7 @@ void c8_process_add_regs()
         chip8.registers[vf] = 0;
     }
 
-    chip8.registers[vx] = (sum & 0x0000FFFF);
+    chip8.registers[vx] = (sum & 0xFF);
 }
 
 /* This function performs SUB Vx, Vy and sets Vf = NOT borrow (stores result in Vx)*/
@@ -245,7 +244,7 @@ void c8_process_shr()
     UBIT8 vx = (chip8.opcode & 0x0F00) >> 8;
     UBIT8 vf = 0xF;
 
-    chip8.registers[vf] = (chip8.registers[vx] & 0x0000000F);
+    chip8.registers[vf] = (chip8.registers[vx] & 0x01) != 0 ? 1: 0;
     chip8.registers[vx] >>= 1;
 }
 
@@ -276,7 +275,7 @@ void c8_process_shl()
     UBIT8 vx = (chip8.opcode & 0x0F00) >> 8;
     UBIT8 vf = 0xF;
 
-    chip8.registers[vf] = (chip8.registers[vx] & 0x80);
+    chip8.registers[vf] = (chip8.registers[vx] & 0x80) != 0 ? 1 : 0;
     chip8.registers[vx] <<= 1;
 }
 
@@ -331,6 +330,7 @@ void c8_process_instruction_9()
     {
         c8_increment_pc();
     }
+    c8_increment_pc();
 }
 
 /* This function performs LD I, addr */
@@ -366,30 +366,32 @@ void c8_process_instruction_D()
 
     chip8.registers[vz] = 0;
 
-    UBIT8 x = 0;
-    while(x < nibble)
+    UBIT8 y = 0;
+    while(y < nibble)
     {
-        UBIT8 pixel = chip8.memory[chip8.index + x];
-        UBIT8 y = 0;
-        while(y < 8)
+        UBIT8 pixel = chip8.memory[chip8.index + y];
+        UBIT8 x = 0;
+        while(x < 8)
         {
             UBIT8 msb = 0x80;
             if((pixel & (msb >> x)) != 0)
             {
                 UBIT8 tX = (chip8.registers[vx] + x) % DISP_W;
                 UBIT8 tY = (chip8.registers[vy] + y) % DISP_H;
-                chip8.display[tX][tY] ^= 1;
+
+                chip8.display[tY][tX] ^= 1;
 
                 /* In case that the pixel has been deleted */
-                if(chip8.display[tX][tY] == 0)
+                if(chip8.display[tY][tX] == 0)
                 {
                     chip8.registers[vz] = 1;
                 }
             }
-            y++;
+            x++;
         }
-        x++;
+        y++;
     }
+
     c8_increment_pc();
 }
 
@@ -474,9 +476,12 @@ void c8_process_instruction_F()
         chip8.sound_timer = chip8.registers[vx];
         break;
     case 0x1E:
+        chip8.registers[0xF] = (chip8.index + chip8.registers[vx] > 0xFFF) ? 1 : 0;
         chip8.index += chip8.registers[vx];
+        break;
     case 0x29:
         chip8.index = chip8.registers[vx] * FONTSET_SPRITE;
+        break;
     case 0x33:
         chip8.memory[chip8.index] = (chip8.registers[vx] / 100) % 10;
         chip8.memory[chip8.index + 1] = (chip8.registers[vx] / 10) % 10;
@@ -499,7 +504,7 @@ void c8_process_instruction_F()
         }
         break;
     default:
-        break;
+        return;
     }
 
     c8_increment_pc();
@@ -561,14 +566,45 @@ void c8_process_instruction()
         c8_process_instruction_F();
         break;
     default:
-        break;
+        return;
     }
 }
 
 /* This function loads the chip8 rom memory */
-void c8_load_rom(char *filename)
+int c8_load_rom(char *filename)
 {
+    FILE* f = NULL;
+    size_t bytes_read = 0;
+    size_t total_bytes_read = 0;
+    UBIT8 buffer[128];
+    UBIT8* p_mem = NULL;
 
+    if(0 == strlen(filename))
+    {
+        return 1;
+    }
+
+    if(!(f = fopen(filename, "rb")))
+    {
+        return 1;
+    }
+
+    while((bytes_read = fread(buffer, 1, sizeof(buffer), f)))
+    {
+        if((total_bytes_read + bytes_read) >= 0xFFF - 0x200)
+        {
+            return 1;
+        }
+
+        p_mem = &(chip8.memory[0x200 + total_bytes_read]);
+        memcpy((void*)p_mem, buffer, bytes_read);
+
+        total_bytes_read += bytes_read;
+    }
+
+    fclose(f);
+
+    return 0;
 }
 
 /* This function emulates a cycle of chip8 */
@@ -596,6 +632,8 @@ Chip8* c8_init()
 
     for(int i = 0; i < KEYBOARD_SIZE; i++)
         memset(&(chip8.keyboard[i]), 0, sizeof(chip8.keyboard[i]));
+
+    memcpy(&(chip8.memory[0]), c8_fontset, 80 * sizeof(UBIT8));
 
     chip8.load_rom = &c8_load_rom;
     chip8.loop = &c8_loop;

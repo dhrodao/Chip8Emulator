@@ -9,7 +9,7 @@ typedef enum {
 } STD_BOOL;
 
 typedef void (*loop_fn)(void); /* Loop function pointer */
-typedef void (*load_rom_fn)(char*); /* Load ROM function pointer */
+typedef int (*load_rom_fn)(char*); /* Load ROM function pointer */
 
 /* Chip-8 */
 
