@@ -9,4 +9,4 @@ all:
 clean:
 	rm main
 
-.PHONY: all
+.PHONY: all clean
