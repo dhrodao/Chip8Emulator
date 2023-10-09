@@ -5,13 +5,19 @@
 
 #include <SDL3/SDL.h>
 
+typedef struct {
+    SDL_Window* w;
+    SDL_Renderer* r;
+    SDL_Texture* t;
+} window_context;
+
 /* ---- Defines ----*/
 
 #define SECOND_TO_US    1000000
 
 /* ---- Functions to handle Main Window ---- */
 
-int window_init(SDL_Window* w, SDL_Surface* screenSurface)
+int window_init(window_context* ctx)
 {
     /* Init SDL Subsystems */
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -21,25 +27,56 @@ int window_init(SDL_Window* w, SDL_Surface* screenSurface)
     }
 
     /* Create SDL Window */
-    w = SDL_CreateWindow("Chip8 Emulator", 500, 500, 0);
-    if(w == NULL)
+    ctx->w = SDL_CreateWindow("Chip8 Emulator", 1024, 512, 0);
+    if(ctx->w == NULL)
     {
         return 1;
     }
 
-    /* Create SDL Surface */
-    screenSurface = SDL_GetWindowSurface(w);
-    
-    /* Fill Surface with white pixels */
-    SDL_FillSurfaceRect(screenSurface, NULL, SDL_MapRGB(screenSurface->format, 0x00, 0x00, 0x00));
+    /* Create renderer */
+    ctx->r = SDL_CreateRenderer(ctx->w, NULL, 0);
 
-    /* Update SDL Window surface */
-    SDL_UpdateWindowSurface(w);
+    /* Create texture */
+    ctx->t = SDL_CreateTexture(ctx->r, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, DISP_W, DISP_H);
 
     return 0;
 }
 
-int main_loop(Chip8* chip8)
+void window_draw(window_context* ctx, Chip8* chip8)
+{
+    SDL_FRect rect;
+    void* pixels;
+    int pitch;
+
+    SDL_RenderClear(ctx->r);
+
+    if(SDL_LockTexture(ctx->t, NULL, &pixels, &pitch))
+    {
+        /* Ignore error */
+        return;
+    }
+
+    for(int i = 0; i < DISP_H;  i++)
+    {
+        for(int j = 0; j < DISP_W; j++)
+        {
+            ((uint32_t*)pixels)[i * DISP_W + j] = (chip8->display[i][j] == 1) ? 0xFFFFFFFF : 0x00000000;
+        }
+    }
+
+    SDL_UnlockTexture(ctx->t);
+
+    rect.x = 0;
+    rect.y = 0;
+    rect.w = 1024;
+    rect.h = 512;
+
+    SDL_RenderTexture(ctx->r, ctx->t, NULL, &rect);
+
+    SDL_RenderPresent(ctx->r);
+}
+
+int main_loop(window_context* ctx, Chip8* chip8)
 {
     STD_BOOL quit = STD_FALSE;
     SDL_Event e;
@@ -93,6 +130,8 @@ int main_loop(Chip8* chip8)
         /* Run CPU Cycle */
         chip8->loop();
 
+        window_draw(ctx, chip8);
+
         while(SDL_PollEvent(&e))
         {
             /* Handle window events */
@@ -133,8 +172,7 @@ void debug_display(Chip8* chip8)
 
 int main()
 {
-    SDL_Window *w = NULL;
-    SDL_Surface* screenSurface = NULL;
+    window_context ctx;
 
     Chip8* chip8 = c8_init();
 
@@ -145,14 +183,14 @@ int main()
     }
 
     /* Init SDL Window */
-    if(window_init(w, screenSurface) != 0)
+    if(window_init(&ctx) != 0)
     {
         return 1;
     }
     
-    main_loop(chip8);
+    main_loop(&ctx, chip8);
 
-    window_deinit(w);
+    window_deinit(ctx.w);
 
     debug_display(chip8);
 
