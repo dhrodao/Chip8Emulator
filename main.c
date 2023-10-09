@@ -192,7 +192,11 @@ int main()
 
     window_deinit(ctx.w);
 
+#ifdef DEBUG
+
     debug_display(chip8);
+
+#endif
 
     return 0;
 }
